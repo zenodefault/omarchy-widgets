@@ -1,11 +1,12 @@
 face "night city" {
   page: 0
-  meta { owl: 10; description: "A neon Night City home page with a futuristic display clock, live phone status, app activity, media and notifications"; version: "1.1"; license: "MIT"; category: "productivity" }
+  meta { owl: 10; description: "A Night City cyberdeck dashboard with live phone status, favorite apps, quick capture, media and notifications"; version: "1.3"; license: "MIT"; category: "productivity" }
   requires { pacman: [] }
   statusBar: false
 
   source now = clock every 1s
   source bat = android.battery
+  source dev = android.device
   source sys = android.system every 30s
   source apps = android.apps
   source n = android.notifications
@@ -14,15 +15,32 @@ face "night city" {
 
   let display = "https://raw.githubusercontent.com/google/fonts/main/ofl/rajdhani/Rajdhani-Medium.ttf"
   let mono = "https://raw.githubusercontent.com/google/fonts/main/ofl/sharetechmono/ShareTechMono-Regular.ttf"
-  let hottest = (apps ?? []).filter(a => !a.system || a.score > 0).sortBy(a => -a.score).take(5)
+  state capture = [] persist
+  state favoriteKeys = [] persist
+  state favoriteQuery = ""
   let health = (apps ?? []).find(a => contains(["com.google.android.apps.fitness", "com.samsung.android.app.shealth", "com.fitbit.FitbitMobile"], a.package))
+  let calendar = (apps ?? []).find(a => contains(["com.google.android.calendar", "com.samsung.android.calendar"], a.package))
+  let favorites = (apps ?? []).filter(a => contains(favoriteKeys, a.key))
+  let favoriteMatches = (apps ?? []).filter(a => contains(lower(a.name), lower(trim(favoriteQuery))) && !contains(favoriteKeys, a.key)).sortBy(a => lower(a.name)).take(40)
+  let browser = (apps ?? []).find(a => contains(["com.android.chrome", "org.mozilla.firefox", "com.brave.browser"], a.package) || contains(lower(a.name), "browser"))
+  let camera = (apps ?? []).find(a => contains(["com.android.camera2", "com.google.android.GoogleCamera", "com.sec.android.app.camera"], a.package) || contains(lower(a.name), "camera"))
+  let email = (apps ?? []).find(a => contains(["com.google.android.gm", "com.microsoft.office.outlook"], a.package) || contains(lower(a.name), "mail"))
+  let messages = (apps ?? []).find(a => contains(["com.google.android.apps.messaging", "com.samsung.android.messaging"], a.package) || contains(lower(a.name), "messages"))
+  let phone = (apps ?? []).find(a => contains(["com.google.android.dialer", "com.samsung.android.dialer"], a.package) || contains(lower(a.name), "phone"))
   let glass = alpha(#080a10, 0.82)
+  let ramPct = sys != null && sys.memory != null && sys.memory.total > 0 ? round(sys.memory.used / sys.memory.total * 100) : 0
+  let storagePct = sys != null && sys.storage != null && sys.storage.total > 0 ? round(sys.storage.used / sys.storage.total * 100) : 0
 
   background: linear(0, 0, 0, 1, [#080a10, #17101a, #090a10])
   padding: 0
 
   component Eyebrow(text) {
-    Text { text: upper(text); font: mono; fontSize: 11; color: #fcee0a; letterSpacing: 1.4 }
+    Row {
+      gap: 6
+      align: center
+      Box { width: 3; height: 11; background: #E23D3D }
+      Text { text: upper(text); font: mono; fontSize: 11; color: #E23D3D; letterSpacing: 1.4 }
+    }
   }
 
   component Readout(text, color = foreground) {
@@ -33,11 +51,61 @@ face "night city" {
     Box {
       height: 1
       fill: width
-      background: alpha(#ff2bd6, 0.5)
+      background: alpha(#E23D3D, 0.65)
     }
   }
 
-  Column {
+  component Matrix() {
+    Canvas {
+      width: 44
+      height: 24
+      for i in range(11) {
+        let bar = 1 + floor(hash(i, 552) * 3)
+        rect(i * 4, 0, bar, height, fill: i % 2 == 0 ? alpha(#3FE3E3, 0.9) : alpha(foreground, 0.8))
+      }
+    }
+  }
+
+  component ActionRow(glyph, label, target, openPicker = false) {
+    Row {
+      gap: 8
+      align: center
+      height: 42
+      padding: [8, 5]
+      background: alpha(#000000, 0.75)
+      border: 1
+      borderColor: alpha(#3FE3E3, 0.6)
+      radius: 0
+      onTap: {
+        if openPicker {
+          screen()
+        } else if target != null {
+          androidApp(target.key)
+        } else {
+          launcher("drawer")
+        }
+      }
+      Text { text: glyph; font: mono; fontSize: 14; color: #3FE3E3; width: 24; align: center }
+      Text { text: label; font: mono; fontSize: 10; fontWeight: 700; color: foreground; weight: 1; maxLines: 1 }
+      Canvas { width: 8; height: 8; path([[0, 0], [8, 0], [8, 8]], closed: true, fill: #3FE3E3) }
+    }
+  }
+
+  Box {
+    fill: true
+    Row {
+      fill: true
+      gap: 8
+      Canvas {
+        width: 13
+        fill: height
+        for i in range(48) {
+          let y = i * height / 48
+          let tick = i % 6 == 0 ? 10 : 4
+          line(width, y, width - tick, y, stroke: alpha(#E23D3D, i % 6 == 0 ? 0.8 : 0.35), width: 1)
+        }
+      }
+      Column {
     scroll: true
     fill: true
     gap: 16
@@ -46,14 +114,48 @@ face "night city" {
     Row {
       align: center
       gap: 10
-      Text { text: "NC"; font: display; fontSize: 22; bold: true; color: #080a10; padding: [8, 10]; background: #fcee0a; radius: 2 }
+      Text { text: "NC"; font: display; fontSize: 22; bold: true; color: #000000; padding: [8, 10]; background: #E23D3D; radius: 2 }
       Column {
         gap: 1
-        Text { text: "NIGHT CITY"; font: display; fontSize: 19; fontWeight: 700; color: #fcee0a; letterSpacing: 2 }
+        Text { text: "NIGHT CITY"; font: display; fontSize: 19; fontWeight: 700; color: #E23D3D; letterSpacing: 2 }
         Text { text: "PERSONAL OPERATING SYSTEM"; font: mono; fontSize: 9; color: muted; letterSpacing: 1 }
       }
       Spacer { weight: 1 }
-      Text { text: "2077 // LIVE"; font: mono; fontSize: 10; color: #ff2bd6; width: 86; align: end; maxLines: 1 }
+      Text { text: "2077 // LIVE"; font: mono; fontSize: 10; color: #E23D3D; width: 86; align: end; maxLines: 1 }
+    }
+
+    Row {
+      align: center
+      gap: 8
+      padding: [7, 8]
+      background: alpha(#000000, 0.78)
+      border: 1
+      borderColor: alpha(#E23D3D, 0.8)
+      radius: 0
+      Text { text: "SYSTEM LINK"; font: mono; fontSize: 10; color: #3FE3E3 }
+      Spacer { weight: 1 }
+      Text { text: sys == null ? "DEVICE // OFFLINE" : "${upper(sys.theme ?? "SYSTEM")} · ${upper(sys.timezone ?? "LOCAL")}"; font: mono; fontSize: 9; color: muted; maxLines: 1 }
+    }
+    Column {
+      gap: 5
+      padding: [7, 8]
+      background: alpha(#000000, 0.78)
+      border: 1
+      borderColor: alpha(#E23D3D, 0.7)
+      radius: 0
+      Text { text: "${upper(dev.maker ?? "DEVICE")} ${upper(dev.model ?? "IDENTITY UNAVAILABLE")}"; font: mono; fontSize: 9; color: #E23D3D; maxLines: 1 }
+      Row {
+        gap: 8
+        Text { text: "ANDROID ${dev.android ?? "--"}"; font: mono; fontSize: 8; color: muted; weight: 1; maxLines: 1 }
+        Text { text: "LAUNCHER ${sys == null ? "--" : sys.launcher ?? "--"}"; font: mono; fontSize: 8; color: muted; maxLines: 1 }
+      }
+      Row {
+        gap: 8
+        Text { text: "RAM ${sys == null || sys.memory == null ? "--" : ramPct + "%"}"; font: mono; fontSize: 8; color: #3FE3E3; weight: 1 }
+        Text { text: "DISK ${sys == null || sys.storage == null ? "--" : storagePct + "%"}"; font: mono; fontSize: 8; color: #3FE3E3; weight: 1 }
+        Text { text: n.available ? "SIGNALS ${n.count}" : "SIGNALS OFFLINE"; font: mono; fontSize: 8; color: #3FE3E3; maxLines: 1 }
+        Text { text: bat == null ? "POWER --" : "POWER ${bat.level}%"; font: mono; fontSize: 8; color: muted }
+      }
     }
 
     Column {
@@ -62,69 +164,200 @@ face "night city" {
         fill: width
         height: 98
         align: start
-        Text { spans: [fmtTime(now, "HH"), {text: ":", color: #ff2bd6}, fmtTime(now, "mm")]; font: display; fontSize: 88; fontWeight: 700; letterSpacing: 1; color: alpha(#ff2bd6, 0.5); offset: [3, 2]; maxLines: 1 }
-        Text { spans: [fmtTime(now, "HH"), {text: ":", color: #00f0ff}, fmtTime(now, "mm")]; font: display; fontSize: 88; fontWeight: 700; letterSpacing: 1; color: foreground; maxLines: 1 }
+        Text { spans: [fmtTime(now, "HH"), {text: ":", color: #E23D3D}, fmtTime(now, "mm")]; font: display; fontSize: 88; fontWeight: 700; letterSpacing: 1; color: alpha(#E23D3D, 0.5); offset: [3, 2]; maxLines: 1 }
+        Text { spans: [fmtTime(now, "HH"), {text: ":", color: #E23D3D}, fmtTime(now, "mm")]; font: display; fontSize: 88; fontWeight: 700; letterSpacing: 1; color: foreground; maxLines: 1 }
+        Canvas {
+          fill: true
+          for i in range(20) {
+            rect(0, i * 5, width, 1, fill: alpha(#3FE3E3, 0.045))
+          }
+        }
       }
       Row {
         align: center
         gap: 8
-        Text { text: upper(fmtTime(now, "EEEE · d MMMM")); font: mono; fontSize: 11; color: #00f0ff; letterSpacing: 1; weight: 1 }
+        Text { text: upper(fmtTime(now, "EEEE · d MMMM")); font: mono; fontSize: 11; color: #E23D3D; letterSpacing: 1; weight: 1 }
         if alarm.set {
-          Text { text: "ALARM ${fmtTime(alarm.time, "HH:mm")}"; font: mono; fontSize: 10; color: #fcee0a; onTap: androidApp(alarm.app) }
+          Text { text: "ALARM ${fmtTime(alarm.time, "HH:mm")}"; font: mono; fontSize: 10; color: #E23D3D; onTap: androidApp(alarm.app) }
         }
+      }
+    }
+
+    Column {
+      gap: 8
+      padding: 10
+      background: alpha(#000000, 0.84)
+      border: 1
+      borderColor: alpha(#E23D3D, 0.8)
+      radius: 0
+      Canvas {
+        height: 2
+        fill: width
+        for i in range(24) {
+          if i % 2 == 0 {
+            rect(i * width / 24, 0, width / 48, 2, fill: alpha(#E23D3D, 0.8))
+          }
+        }
+      }
+      Row {
+        align: center
+        gap: 8
+        Box {
+          size: 25
+          background: #3FE3E3
+          Text { text: n.available ? "${n.count}" : "!"; font: mono; fontSize: 13; fontWeight: 700; color: #000000; align: center }
+        }
+        Column {
+          gap: 2
+          weight: 1
+          Eyebrow { text: "ATTENTION // SIGNAL STATUS" }
+          Readout {
+            text: n.available && n.count > 0 ? "${fmtTime(n.items[0].time, "HH:mm")} · ${fmtTime(n.items[0].time, "d MMM")}" : n.available ? "NO UNREAD NOTIFICATIONS" : "ACCESS REQUIRED"
+            color: muted
+          }
+        }
+        Text { text: "+"; font: mono; fontSize: 17; color: #3FE3E3 }
+      }
+      Divider { }
+      Row {
+        gap: 12
+        align: center
+        Box {
+          width: 48
+          height: 52
+          Canvas {
+            fill: true
+            path([[width / 2, 3], [width - 4, height - 4], [4, height - 4]], closed: true, stroke: #3FE3E3, width: 2)
+            line(width / 2, 17, width / 2, 33, stroke: #3FE3E3, width: 3)
+            circle(width / 2, 40, 1.5, fill: #3FE3E3)
+          }
+        }
+        Column {
+          gap: 5
+          weight: 1
+          Text { text: "MEMORY // ${sys == null || sys.memory == null ? "--" : fmtBytes(sys.memory.used)} / ${sys == null || sys.memory == null ? "--" : fmtBytes(sys.memory.total)}"; font: mono; fontSize: 8; color: #3FE3E3; maxLines: 1 }
+          Progress { value: ramPct; color: #3FE3E3; track: alpha(#3FE3E3, 0.15); height: 4 }
+          Text { text: "STORAGE // ${sys == null || sys.storage == null ? "--" : fmtBytes(sys.storage.used)} / ${sys == null || sys.storage == null ? "--" : fmtBytes(sys.storage.total)}"; font: mono; fontSize: 8; color: #E23D3D; maxLines: 1 }
+          Progress { value: storagePct; color: #E23D3D; track: alpha(#E23D3D, 0.18); height: 4 }
+        }
+      }
+      Column {
+        gap: 5
+        padding: 9
+        background: alpha(#E23D3D, 0.1)
+        border: 1
+        borderColor: alpha(#E23D3D, 0.9)
+        radius: 0
+        Text { text: n.available && n.count > 0 ? "INCOMING SIGNAL // ${upper(n.items[0].app)}" : "NO ACTIVE SIGNALS"; font: mono; fontSize: 10; fontWeight: 700; color: #E23D3D; maxLines: 1 }
+        if n.available && n.count > 0 {
+          Text { text: upper(n.items[0].title); font: display; fontSize: 16; fontWeight: 700; color: foreground; maxLines: 1; onTap: notification("open", n.items[0].key) }
+          Text { text: upper(n.items[0].text); font: mono; fontSize: 9; color: muted; maxLines: 2; onTap: notification("open", n.items[0].key) }
+        } else {
+          Text { text: n.available ? "ALL CHANNELS CLEAR" : "NOTIFICATION ACCESS REQUIRED"; font: mono; fontSize: 9; color: muted; maxLines: 1 }
+        }
+        Row {
+          gap: 3
+          for i in range(16) {
+            Box { weight: 1; height: 5; background: i < (bat == null ? 0 : floor(bat.level / 100 * 16)) ? #3FE3E3 : alpha(#3FE3E3, 0.16) }
+          }
+        }
+        Text { text: "POWER LOAD ${bat == null ? "--" : bat.level}%"; font: mono; fontSize: 8; color: #3FE3E3; align: end }
       }
     }
 
     Divider { }
 
-    Row {
-      gap: 10
-      Column {
-        weight: 1
-        gap: 5
-        padding: 12
-        background: glass
-        radius: 10
-        Eyebrow { text: "BATTERY" }
-        Text { text: bat == null ? "--" : "${bat.level}%"; font: display; fontSize: 30; fontWeight: 600; color: #00f0ff }
-        Progress { value: bat == null ? 0 : bat.level; color: bat != null && bat.level < 20 && !bat.charging ? #ff2bd6 : #00f0ff; track: alpha(foreground, 0.14); height: 3 }
-        Readout { text: bat == null ? "LINK OFFLINE" : bat.charging ? "CHARGING" : "ON INTERNAL POWER"; color: muted }
+    Column {
+      gap: 5
+      padding: 12
+      background: glass
+      border: 1
+      borderColor: alpha(#E23D3D, 0.75)
+      radius: 2
+      Row {
+        gap: 8
+        align: center
+        Text { text: "↕"; font: mono; fontSize: 17; color: #E23D3D; width: 24; align: center }
+        Column {
+          gap: 1
+          weight: 1
+          Text { text: "COMPLETE"; font: mono; fontSize: 10; fontWeight: 700; color: #3FE3E3 }
+          Text { text: "ACCESS GRANTED // DEVICE STATUS"; font: mono; fontSize: 8; color: muted }
+        }
+        Text { text: "104-008"; font: mono; fontSize: 8; color: #E23D3D }
       }
-      Column {
-        weight: 1
-        gap: 5
-        padding: 12
-        background: glass
-        radius: 10
-        Eyebrow { text: "UPTIME" }
-        Text { text: sys == null ? "--" : fmtDuration(sys.uptime); font: display; fontSize: 28; fontWeight: 600; color: #00f0ff }
-        Readout { text: sys == null ? "WAITING FOR DEVICE" : "${sys.memory == null ? "--" : fmtBytes(sys.memory.used)} RAM IN USE"; color: muted }
+      Divider { }
+      Eyebrow { text: "BATTERY" }
+      Row {
+        gap: 10
+        align: center
+        Text { text: bat == null ? "--" : "${bat.level}%"; font: display; fontSize: 30; fontWeight: 600; color: #3FE3E3 }
+        Column {
+          weight: 1
+          gap: 5
+          Progress { value: bat == null ? 0 : bat.level; color: #3FE3E3; track: alpha(foreground, 0.14); height: 3 }
+          Readout { text: bat == null ? "LINK OFFLINE" : bat.charging ? "CHARGING" : "ON INTERNAL POWER"; color: muted }
+        }
+      }
+      Divider { }
+      Eyebrow { text: "SYSTEM DIAGNOSTICS" }
+      Row {
+        gap: 6
+        align: center
+        Text { text: "RAM"; font: mono; fontSize: 8; color: #3FE3E3; width: 30 }
+        Progress { value: ramPct; color: #3FE3E3; track: alpha(#3FE3E3, 0.16); height: 4; weight: 1 }
+        Text { text: sys == null || sys.memory == null ? "--" : "${fmtBytes(sys.memory.used)} / ${fmtBytes(sys.memory.total)}"; font: mono; fontSize: 7; color: muted; width: 96; align: end; maxLines: 1 }
+      }
+      Row {
+        gap: 6
+        align: center
+        Text { text: "DISK"; font: mono; fontSize: 8; color: #E23D3D; width: 30 }
+        Progress { value: storagePct; color: #E23D3D; track: alpha(#E23D3D, 0.16); height: 4; weight: 1 }
+        Text { text: sys == null || sys.storage == null ? "--" : "${fmtBytes(sys.storage.used)} / ${fmtBytes(sys.storage.total)}"; font: mono; fontSize: 7; color: muted; width: 96; align: end; maxLines: 1 }
+      }
+      Row {
+        gap: 8
+        Text { text: "CPU ${sys == null || sys.cpu == null ? "--" : sys.cpu.cores} CORES"; font: mono; fontSize: 8; color: #E23D3D; weight: 1; maxLines: 1 }
+        Text { text: "BATTERY ${bat == null ? "--" : bat.charging ? "CHARGING" : bat.status}"; font: mono; fontSize: 8; color: #3FE3E3; maxLines: 1 }
+      }
+      Box {
+        fill: width
+        padding: [6, 8]
+        background: alpha(#E23D3D, 0.08)
+        border: 1
+        borderColor: alpha(#E23D3D, 0.5)
+        radius: 0
+        Row {
+          gap: 8
+          align: center
+          Matrix { }
+          Text { text: "ROOT@NIGHTCITY: ~#"; font: mono; fontSize: 9; color: #3FE3E3; maxLines: 1 }
+        }
       }
     }
 
-    Column {
-      gap: 10
-      padding: 16
-      frost: 18
-      background: glass
-      radius: 12
-      Eyebrow { text: "DAILY STEPS // BIOMETRIC LINK" }
-      Row {
-        align: center
-        gap: 12
-        Text { text: "—"; font: display; fontSize: 52; fontWeight: 600; color: #fcee0a; width: 74 }
-        Column {
-          gap: 4
-          weight: 1
-          Text { text: "NO PEDOMETER FEED"; font: mono; fontSize: 12; color: #ff2bd6 }
-          Readout { text: "Step totals aren't exposed to OWL yet."; color: muted }
-        }
+    Row {
+      gap: 8
+      Column {
+        weight: 1
+        gap: 4
+        padding: 12
+        background: glass
+        border: 1
+        borderColor: alpha(#E23D3D, 0.65)
+        radius: 2
+        Eyebrow { text: "UPTIME" }
+        Text { text: sys == null ? "--" : fmtDuration(sys.uptime); font: display; fontSize: 26; fontWeight: 600; color: #3FE3E3; maxLines: 1 }
+        Readout { text: sys == null ? "WAITING FOR DEVICE" : "${sys.memory == null ? "--" : fmtBytes(sys.memory.used)} RAM"; color: muted }
       }
-      Text {
-        text: health != null ? "OPEN ${upper(health.name)} TO CHECK TODAY'S TOTAL  ↗" : "CONNECT A FITNESS APP TO VIEW YOUR TOTAL"
-        font: mono
-        fontSize: 10
-        color: #fcee0a
+      Column {
+        weight: 1
+        gap: 4
+        padding: 12
+        background: glass
+        border: 1
+        borderColor: alpha(#E23D3D, 0.65)
+        radius: 2
         onTap: {
           if health != null {
             androidApp(health.key)
@@ -132,38 +365,148 @@ face "night city" {
             launcher("drawer")
           }
         }
+        Eyebrow { text: "PEDOMETER" }
+        Text { text: "—"; font: display; fontSize: 26; fontWeight: 600; color: #E23D3D }
+        Readout { text: health == null ? "NO FITNESS APP FOUND" : "OPEN ${upper(health.name)}"; color: muted }
+        Readout { text: "LIVE COUNT UNAVAILABLE"; color: #3FE3E3 }
+      }
+    }
+
+    Row {
+      gap: 8
+      Column {
+        weight: 1
+        gap: 8
+        padding: 10
+        background: glass
+        border: 1
+        borderColor: alpha(#E23D3D, 0.75)
+        radius: 0
+        Row {
+          align: center
+          Eyebrow { text: "FAVORITE APPS" }
+          Spacer { weight: 1 }
+          Text { text: "+"; font: mono; fontSize: 16; color: #E23D3D; width: 18; align: end; onTap: screen() }
+        }
+        Divider { }
+        if len(favorites) == 0 {
+          Readout { text: "NO FAVORITES SAVED"; color: muted }
+        } else {
+          Column {
+            scroll: true
+            height: 220
+            gap: 5
+            for a in favorites key a.key {
+              Row {
+                gap: 7
+                align: center
+                padding: 5
+                background: alpha(#E23D3D, 0.08)
+                border: 1
+                borderColor: alpha(#E23D3D, 0.45)
+                radius: 0
+                onTap: androidApp(a.key)
+                Image { src: a.icon; size: 26 }
+                Text { text: upper(a.name); font: mono; fontSize: 9; color: foreground; weight: 1; maxLines: 1 }
+                Canvas { width: 7; height: 7; path([[0, 0], [7, 0], [7, 7]], closed: true, fill: #3FE3E3) }
+              }
+            }
+          }
+        }
+      }
+      Column {
+        weight: 1
+        gap: 6
+        padding: 10
+        background: glass
+        border: 1
+        borderColor: alpha(#E23D3D, 0.75)
+        radius: 0
+        Text { text: "HACK // ACTIONS"; font: mono; fontSize: 10; fontWeight: 700; color: #E23D3D; padding: [2, 0, 4, 0] }
+        ActionRow { glyph: "[]"; label: "SHORTCUTS"; target: null; openPicker: true }
+        ActionRow { glyph: "<>"; label: "INTERNET"; target: browser }
+        ActionRow { glyph: "O"; label: "CAMERA"; target: camera }
+        ActionRow { glyph: "@"; label: "EMAIL"; target: email }
+        ActionRow { glyph: "#"; label: "MESSAGES"; target: messages }
+        ActionRow { glyph: "+"; label: "PHONE"; target: phone }
       }
     }
 
     Column {
-      gap: 10
-      padding: 16
+      gap: 8
+      padding: 14
       frost: 18
       background: glass
-      radius: 12
+      border: 1
+      borderColor: alpha(#E23D3D, 0.75)
+      radius: 2
       Row {
         align: center
-        Eyebrow { text: "MOST-OPENED APPS" }
+        Eyebrow { text: "NEXT UP" }
         Spacer { weight: 1 }
-        Text { text: "LAST ACTIVITY"; font: mono; fontSize: 9; color: muted }
-      }
-      Divider { }
-      if len(hottest) == 0 {
-        Readout { text: "NO APP ACTIVITY RECORDED"; color: muted }
-      } else {
-        for a in hottest key a.key {
-          Row {
-            gap: 10
-            align: center
-            padding: [4, 0]
-            onTap: androidApp(a.key)
-            Image { src: a.icon; size: 30 }
-            Text { text: upper(a.name); font: display; fontSize: 16; fontWeight: 600; weight: 1; maxLines: 1 }
-            Text { text: a.last == null ? "NO LOG" : "${fmtTime(a.last, "HH:mm")} · ${fmtAgo(a.last, now)}"; font: mono; fontSize: 9; color: #fcee0a; align: end }
+        Text {
+          text: calendar == null ? "CALENDAR" : upper(calendar.name)
+          font: mono
+          fontSize: 9
+          color: muted
+          onTap: {
+            if calendar != null {
+              androidApp(calendar.key)
+            } else {
+              launcher("drawer")
+            }
           }
         }
       }
-      Readout { text: "Last-opened times only; screen-time totals aren't exposed here."; color: muted }
+      Divider { }
+      Row {
+        align: center
+        gap: 10
+        onTap: {
+          if alarm.set {
+            androidApp(alarm.app)
+          } else if calendar != null {
+            androidApp(calendar.key)
+          } else {
+            launcher("drawer")
+          }
+        }
+        Text { text: alarm.set ? fmtTime(alarm.time, "HH:mm") : "—"; font: display; fontSize: 32; fontWeight: 600; color: #3FE3E3; width: 88 }
+        Column {
+          gap: 2
+          weight: 1
+          Text { text: alarm.set ? "NEXT ALARM" : "NO ALARM SET"; font: mono; fontSize: 11; color: foreground }
+          Readout { text: alarm.set ? "Tap to open alarm" : "Tap calendar to check your agenda"; color: muted }
+        }
+      }
+      Readout { text: "Calendar events aren't exposed to OWL yet."; color: muted }
+    }
+
+    Column {
+      gap: 8
+      padding: 14
+      frost: 18
+      background: glass
+      border: 1
+      borderColor: alpha(#E23D3D, 0.65)
+      radius: 2
+      Eyebrow { text: "QUICK CAPTURE" }
+      Input {
+        placeholder: "add a task or note"
+        clear: true
+        onSubmit: {
+          let item = trim(value)
+          if item != "" {
+            capture = ([item] + capture).take(5)
+          }
+        }
+      }
+      for item, i in capture.take(3) {
+        Text { text: "› ${item}"; font: mono; fontSize: 11; color: foreground; maxLines: 2; onTap: capture = capture.take(i) + capture.drop(i + 1) }
+      }
+      if len(capture) == 0 {
+        Readout { text: "Saved on this face · tap an item to clear it."; color: muted }
+      }
     }
 
     if m != null && m.title != null {
@@ -173,12 +516,14 @@ face "night city" {
         padding: 14
         frost: 18
         background: glass
-        radius: 12
+        border: 1
+        borderColor: alpha(#E23D3D, 0.7)
+        radius: 2
         onTap: media("open")
         if m.art != null {
           Image { src: m.art; size: 42; fit: cover; radius: 6 }
         } else {
-          Box { size: 42; radius: 6; background: alpha(#ff2bd6, 0.25); Text { text: "♫"; font: display; fontSize: 22; color: #fcee0a; align: center } }
+          Box { size: 42; radius: 6; background: alpha(#E23D3D, 0.25); Text { text: "♫"; font: display; fontSize: 22; color: #E23D3D; align: center } }
         }
         Column {
           gap: 2
@@ -187,7 +532,7 @@ face "night city" {
           Text { text: upper(m.title); font: display; fontSize: 16; fontWeight: 600; maxLines: 1 }
           Text { text: upper(m.artist ?? m.app ?? "UNKNOWN SOURCE"); font: mono; fontSize: 10; color: muted; maxLines: 1 }
         }
-        Text { text: m.playing == true ? "PLAYING" : "PAUSED"; font: mono; fontSize: 9; color: #fcee0a }
+        Text { text: m.playing == true ? "PLAYING" : "PAUSED"; font: mono; fontSize: 9; color: m.playing == true ? #3FE3E3 : muted }
       }
     }
 
@@ -196,7 +541,9 @@ face "night city" {
       padding: 16
       frost: 18
       background: glass
-      radius: 12
+      border: 1
+      borderColor: alpha(#E23D3D, 0.75)
+      radius: 2
       Row {
         align: center
         Eyebrow { text: "INCOMING SIGNALS" }
@@ -221,13 +568,75 @@ face "night city" {
               Text { text: upper(item.title); font: display; fontSize: 15; fontWeight: 600; maxLines: 1 }
               Text { text: upper(item.text); font: mono; fontSize: 9; color: muted; maxLines: 1 }
             }
-            Text { text: fmtAgo(item.time, now); font: mono; fontSize: 9; color: #fcee0a }
+            Text { text: fmtAgo(item.time, now); font: mono; fontSize: 9; color: #3FE3E3 }
           }
         }
       }
     }
 
-    Text { text: "STAY HUMAN // STAY DANGEROUS"; font: mono; fontSize: 9; letterSpacing: 1; color: alpha(#ff2bd6, 0.8); align: center; fill: width; padding: [8, 0] }
+    Text { text: "STAY HUMAN // STAY DANGEROUS"; font: mono; fontSize: 9; letterSpacing: 1; color: alpha(#E23D3D, 0.8); align: center; fill: width; padding: [8, 0] }
     Spacer { height: screenInset }
+      }
+    }
+  }
+
+  screen {
+    title: "favorite apps"
+    Column {
+      scroll: true
+      gap: 12
+      padding: 16
+      Text { text: "FAVORITE APPS // QUICK ACCESS"; font: mono; fontSize: 16; color: #E23D3D; letterSpacing: 1.2 }
+      Input {
+        text: favoriteQuery
+        placeholder: "search installed apps"
+        clear: true
+        onChange: favoriteQuery = value
+      }
+      Text { text: "SAVED"; font: mono; fontSize: 11; color: #3FE3E3 }
+      if len(favorites) == 0 {
+        Readout { text: "No favorites saved yet."; color: muted }
+      }
+      for a in favorites key a.key {
+        Row {
+          gap: 10
+          align: center
+          padding: 8
+          background: glass
+          border: 1
+          borderColor: alpha(#E23D3D, 0.55)
+          radius: 2
+          Image { src: a.icon; size: 30 }
+          Text { text: a.name; weight: 1; maxLines: 1 }
+          Button {
+            text: "REMOVE"
+            color: #E23D3D
+            onTap: favoriteKeys = favoriteKeys.filter(key => key != a.key)
+          }
+        }
+      }
+      Text { text: "ADD APPS"; font: mono; fontSize: 11; color: #3FE3E3 }
+      if len(favoriteMatches) == 0 {
+        Readout { text: "No matching apps."; color: muted }
+      }
+      for a in favoriteMatches key a.key {
+        Row {
+          gap: 10
+          align: center
+          padding: 8
+          background: glass
+          border: 1
+          borderColor: alpha(#E23D3D, 0.55)
+          radius: 2
+          Image { src: a.icon; size: 30 }
+          Text { text: a.name; weight: 1; maxLines: 1 }
+          Button {
+            text: "ADD"
+            color: #3FE3E3
+            onTap: favoriteKeys = (favoriteKeys + [a.key]).take(12)
+          }
+        }
+      }
+    }
   }
 }
